@@ -41,43 +41,23 @@ void _configureTimerFrequency(long pwm_frequency, mcpwm_dev_t* mcpwm_num,  mcpwm
 
   mcpwm_config_t pwm_config;
   pwm_config.counter_mode = MCPWM_UP_DOWN_COUNTER; // Up-down counter (triangle wave)
-  pwm_config.duty_mode = MCPWM_DUTY_MODE_0; // Active HIGH
+  pwm_config.duty_mode = (_isset(dead_zone) || SIMPLEFOC_PWM_ACTIVE_HIGH == true) ? MCPWM_DUTY_MODE_0 : MCPWM_DUTY_MODE_1; // Normally Active HIGH (MCPWM_DUTY_MODE_0)
   pwm_config.frequency  = 2*pwm_frequency; // set the desired freq - just a placeholder for now https://github.com/simplefoc/Arduino-FOC/issues/76
   mcpwm_init(mcpwm_unit, MCPWM_TIMER_0, &pwm_config);    //Configure PWM0A & PWM0B with above settings
   mcpwm_init(mcpwm_unit, MCPWM_TIMER_1, &pwm_config);    //Configure PWM1A & PWM1B with above settings
   mcpwm_init(mcpwm_unit, MCPWM_TIMER_2, &pwm_config);    //Configure PWM2A & PWM2B with above settings
 
-   mcpwm_deadtime_type_t pwm_mode = MCPWM_ACTIVE_HIGH_COMPLIMENT_MODE; // Normal, noninverting driver
-  // Normal, noninverting driver
-  #if (SIMPLEFOC_PWM_HIGHSIDE_ACTIVE_HIGH == true) && (SIMPLEFOC_PWM_LOWSIDE_ACTIVE_HIGH == true)
-    pwm_mode = MCPWM_ACTIVE_HIGH_COMPLIMENT_MODE;
-  #endif
-  // Inverted lowside driver
-  #if (SIMPLEFOC_PWM_HIGHSIDE_ACTIVE_HIGH == true) && (SIMPLEFOC_PWM_LOWSIDE_ACTIVE_HIGH == false)
-    pwm_mode = MCPWM_ACTIVE_HIGH_MODE;
-  #endif
-  // Inverted highside driver
-  #if (SIMPLEFOC_PWM_HIGHSIDE_ACTIVE_HIGH == false) && (SIMPLEFOC_PWM_LOWSIDE_ACTIVE_HIGH == true)
-    pwm_mode = MCPWM_ACTIVE_LOW_MODE;
-  #endif
-  // Inverted low- & highside driver. 
-  // Caution: This may short the FETs on reset of the ESP32, as both pins get pulled low!
-  #if (SIMPLEFOC_PWM_HIGHSIDE_ACTIVE_HIGH == false) && (SIMPLEFOC_PWM_LOWSIDE_ACTIVE_HIGH == false)
-    pwm_mode = MCPWM_ACTIVE_LOW_COMPLIMENT_MODE;
-  #endif
-
   if (_isset(dead_zone)){
     // dead zone is configured
     float dead_time = (float)(_MCPWM_FREQ / (pwm_frequency)) * dead_zone;
+    mcpwm_deadtime_type_t pwm_mode;
+    if      ((SIMPLEFOC_PWM_HIGHSIDE_ACTIVE_HIGH == true)  && (SIMPLEFOC_PWM_LOWSIDE_ACTIVE_HIGH == true)) {pwm_mode = MCPWM_ACTIVE_HIGH_COMPLIMENT_MODE;}  // Normal, noninverting driver
+    else if ((SIMPLEFOC_PWM_HIGHSIDE_ACTIVE_HIGH == true)  && (SIMPLEFOC_PWM_LOWSIDE_ACTIVE_HIGH == false)){pwm_mode = MCPWM_ACTIVE_HIGH_MODE;}             // Inverted lowside driver
+    else if ((SIMPLEFOC_PWM_HIGHSIDE_ACTIVE_HIGH == false) && (SIMPLEFOC_PWM_LOWSIDE_ACTIVE_HIGH == true)) {pwm_mode = MCPWM_ACTIVE_LOW_MODE;}              // Inverted highside driver
+    else if ((SIMPLEFOC_PWM_HIGHSIDE_ACTIVE_HIGH == false) && (SIMPLEFOC_PWM_LOWSIDE_ACTIVE_HIGH == false)){pwm_mode = MCPWM_ACTIVE_LOW_COMPLIMENT_MODE;}   // Inverted low- & highside driver. Caution: This may short the FETs on reset of the ESP32, as both pins get pulled low!
     mcpwm_deadtime_enable(mcpwm_unit, MCPWM_TIMER_0, pwm_mode, dead_time/2.0, dead_time/2.0);
     mcpwm_deadtime_enable(mcpwm_unit, MCPWM_TIMER_1, pwm_mode, dead_time/2.0, dead_time/2.0);
     mcpwm_deadtime_enable(mcpwm_unit, MCPWM_TIMER_2, pwm_mode, dead_time/2.0, dead_time/2.0);
-  } else
-  {
-    // dead zone is not configured, call anyway to set appropriate active High & Low mode
-    mcpwm_deadtime_enable(mcpwm_unit, MCPWM_TIMER_0, pwm_mode, 0, 0);
-    mcpwm_deadtime_enable(mcpwm_unit, MCPWM_TIMER_1, pwm_mode, 0, 0);
-    mcpwm_deadtime_enable(mcpwm_unit, MCPWM_TIMER_2, pwm_mode, 0, 0);
   }
   _delay(100);
 
