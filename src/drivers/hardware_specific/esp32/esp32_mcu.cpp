@@ -47,12 +47,37 @@ void _configureTimerFrequency(long pwm_frequency, mcpwm_dev_t* mcpwm_num,  mcpwm
   mcpwm_init(mcpwm_unit, MCPWM_TIMER_1, &pwm_config);    //Configure PWM1A & PWM1B with above settings
   mcpwm_init(mcpwm_unit, MCPWM_TIMER_2, &pwm_config);    //Configure PWM2A & PWM2B with above settings
 
+   mcpwm_deadtime_type_t pwm_mode = MCPWM_ACTIVE_HIGH_COMPLIMENT_MODE; // Normal, noninverting driver
+  // Normal, noninverting driver
+  #if (SIMPLEFOC_PWM_HIGHSIDE_ACTIVE_HIGH == true) && (SIMPLEFOC_PWM_LOWSIDE_ACTIVE_HIGH == true)
+    pwm_mode = MCPWM_ACTIVE_HIGH_COMPLIMENT_MODE;
+  #endif
+  // Inverted lowside driver
+  #if (SIMPLEFOC_PWM_HIGHSIDE_ACTIVE_HIGH == true) && (SIMPLEFOC_PWM_LOWSIDE_ACTIVE_HIGH == false)
+    pwm_mode = MCPWM_ACTIVE_HIGH_MODE;
+  #endif
+  // Inverted highside driver
+  #if (SIMPLEFOC_PWM_HIGHSIDE_ACTIVE_HIGH == false) && (SIMPLEFOC_PWM_LOWSIDE_ACTIVE_HIGH == true)
+    pwm_mode = MCPWM_ACTIVE_LOW_MODE;
+  #endif
+  // Inverted low- & highside driver. 
+  // Caution: This may short the FETs on reset of the ESP32, as both pins get pulled low!
+  #if (SIMPLEFOC_PWM_HIGHSIDE_ACTIVE_HIGH == false) && (SIMPLEFOC_PWM_LOWSIDE_ACTIVE_HIGH == false)
+    pwm_mode = MCPWM_ACTIVE_LOW_COMPLIMENT_MODE;
+  #endif
+
   if (_isset(dead_zone)){
     // dead zone is configured
     float dead_time = (float)(_MCPWM_FREQ / (pwm_frequency)) * dead_zone;
-    mcpwm_deadtime_enable(mcpwm_unit, MCPWM_TIMER_0, MCPWM_ACTIVE_HIGH_COMPLIMENT_MODE, dead_time/2.0, dead_time/2.0);
-    mcpwm_deadtime_enable(mcpwm_unit, MCPWM_TIMER_1, MCPWM_ACTIVE_HIGH_COMPLIMENT_MODE, dead_time/2.0, dead_time/2.0);
-    mcpwm_deadtime_enable(mcpwm_unit, MCPWM_TIMER_2, MCPWM_ACTIVE_HIGH_COMPLIMENT_MODE, dead_time/2.0, dead_time/2.0);
+    mcpwm_deadtime_enable(mcpwm_unit, MCPWM_TIMER_0, pwm_mode, dead_time/2.0, dead_time/2.0);
+    mcpwm_deadtime_enable(mcpwm_unit, MCPWM_TIMER_1, pwm_mode, dead_time/2.0, dead_time/2.0);
+    mcpwm_deadtime_enable(mcpwm_unit, MCPWM_TIMER_2, pwm_mode, dead_time/2.0, dead_time/2.0);
+  } else
+  {
+    // dead zone is not configured, call anyway to set appropriate active High & Low mode
+    mcpwm_deadtime_enable(mcpwm_unit, MCPWM_TIMER_0, pwm_mode, 0, 0);
+    mcpwm_deadtime_enable(mcpwm_unit, MCPWM_TIMER_1, pwm_mode, 0, 0);
+    mcpwm_deadtime_enable(mcpwm_unit, MCPWM_TIMER_2, pwm_mode, 0, 0);
   }
   _delay(100);
 
