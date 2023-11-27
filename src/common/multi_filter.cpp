@@ -6,6 +6,7 @@ MultiFilter::MultiFilter(float time_constant, float q_factor)
     , yl_prev(0.0f)
     , yh_prev(0.0f)
     , yb_prev(0.0f)
+    , yn_prev(0.0f)
 
 {
     timestamp_prev = _micros();
@@ -23,6 +24,7 @@ float MultiFilter::operator() (float x)
         yl_prev = x;
         yh_prev = x;
         yb_prev = x;
+        yn_prev = x;
         timestamp_prev = timestamp;
         return x;
     }
@@ -34,6 +36,7 @@ float MultiFilter::operator() (float x)
     yl_prev = yl;
     yh_prev = yh;
     yb_prev = yb;
+    yn_prev = yl_prev + yh_prev + x * notchDepth;
     timestamp_prev = timestamp;
     
     switch (defaultFilter)
@@ -47,6 +50,9 @@ float MultiFilter::operator() (float x)
     case MULTI_FILTER_BANDPASS:
         return yb_prev;
         break;
+    case MULTI_FILTER_NOTCH:
+        return yn_prev;
+        break;
     default:
         return yl_prev;
         break;
@@ -56,6 +62,7 @@ float MultiFilter::operator() (float x)
 float MultiFilter::getLp() {return yl_prev;}
 float MultiFilter::getHp() {return yh_prev;}
 float MultiFilter::getBp() {return yb_prev;}
+float MultiFilter::getNotch() {return yn_prev;}
 
 float MultiFilter::getLp(float x) 
 {
@@ -72,6 +79,11 @@ float MultiFilter::getBp(float x)
     (*this)(x);  // Call operator() on current instance of MultiFilter
     return yb_prev;
 }
+float MultiFilter::getNotch(float x) 
+{
+    (*this)(x);  // Call operator() on current instance of MultiFilter
+    return yn_prev;
+}
 
 void MultiFilter::setQ(float newQ)
 {
@@ -81,6 +93,17 @@ void MultiFilter::setQ(float newQ)
     }else
     {
         alpha2 = 1e3f;
+    }
+}
+
+void MultiFilter::setNotchDepth(float newNotchDepth)
+{
+    if (newNotchDepth > 0.0f)
+    {
+        notchDepth = newNotchDepth;
+    }else
+    {
+        notchDepth = 1e-3f;
     }
 }
 
