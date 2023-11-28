@@ -29,7 +29,7 @@ float MultiFilter::operator() (float x)
         return x;
     }
 
-    alpha1 = 2 * _sin(dt/(_PI*Tf));
+    alpha1 = 20 * _sin(dt/(_PI*Tf));
     float yh = x - yl_prev - alpha2 * yb_prev;
     float yb = alpha1 * yh + yb_prev;
     float yl = alpha1 * yb + yl_prev;
@@ -48,10 +48,10 @@ float MultiFilter::operator() (float x)
         return yh_prev;
         break;
     case MULTI_FILTER_BANDPASS:
-        return yb_prev;
+        return yb_prev/q;
         break;
     case MULTI_FILTER_NOTCH:
-        return yn_prev;
+        return yn_prev/(1+notchDepth);
         break;
     default:
         return yl_prev;
@@ -61,8 +61,8 @@ float MultiFilter::operator() (float x)
 
 float MultiFilter::getLp() {return yl_prev;}
 float MultiFilter::getHp() {return yh_prev;}
-float MultiFilter::getBp() {return yb_prev;}
-float MultiFilter::getNotch() {return yn_prev;}
+float MultiFilter::getBp() {return yb_prev/q;}
+float MultiFilter::getNotch() {return yn_prev/(1+notchDepth);}
 
 float MultiFilter::getLp(float x) 
 {
@@ -77,12 +77,12 @@ float MultiFilter::getHp(float x)
 float MultiFilter::getBp(float x) 
 {
     (*this)(x);  // Call operator() on current instance of MultiFilter
-    return yb_prev;
+    return yb_prev/q;
 }
 float MultiFilter::getNotch(float x) 
 {
     (*this)(x);  // Call operator() on current instance of MultiFilter
-    return yn_prev;
+    return yn_prev/(1+notchDepth);
 }
 
 void MultiFilter::setQ(float newQ)
@@ -90,20 +90,22 @@ void MultiFilter::setQ(float newQ)
     if (newQ != 0.0f && newQ != -0.0f)
     {
         alpha2 = 1.0f / newQ;
+        q = newQ;
     }else
     {
-        alpha2 = 1e3f;
+        alpha2 = 1.0f / 0.7f;
+        q = 0.7f;
     }
 }
 
 void MultiFilter::setNotchDepth(float newNotchDepth)
 {
-    if (newNotchDepth > 0.0f)
+    if (newNotchDepth >= 0.0f)
     {
         notchDepth = newNotchDepth;
     }else
     {
-        notchDepth = 1e-3f;
+        notchDepth = 0.0f;
     }
 }
 
@@ -111,7 +113,7 @@ void MultiFilter::setfrequency(float newfrequency)
 {
     if (newfrequency > 0.0f)
     {
-        Tf = 1.0f / (newfrequency * _2PI);
+        Tf = 1.0f / newfrequency;
     }else
     {
         Tf = 1e-3f;

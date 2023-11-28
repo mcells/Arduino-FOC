@@ -17,7 +17,7 @@ public:
      * @param Tf - Multi filter time constant
      * @param q - Filter resonance
      */
-    MultiFilter(float Tf, float q=1.0f);
+    MultiFilter(float Tf, float q=0.7f);
     ~MultiFilter() = default;
 
     enum returnType {
@@ -55,8 +55,8 @@ protected:
     float yb_prev; //!< filtered bandpass value in previous execution step 
     float yn_prev; //!< filtered notch value in previous execution step 
 
-    float q = 1.0f;       //!< filter resonance.
-    float notchDepth = 1.0f;       //!< notch filter cut depth.
+    float q = 0.7f;       //!< filter resonance.
+    float notchDepth = 0.0f;       //!< notch filter cut depth.
 
     float alpha1;
     float alpha2 = 1.0f/q;
