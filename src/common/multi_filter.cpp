@@ -29,7 +29,7 @@ float MultiFilter::operator() (float x)
         return x;
     }
 
-    alpha1 = 20 * _sin(dt/(_PI*Tf));
+    alpha1 = 2 * _sin(dt/(_PI*Tf));
     float yh = x - yl_prev - alpha2 * yb_prev;
     float yb = alpha1 * yh + yb_prev;
     float yl = alpha1 * yb + yl_prev;
@@ -93,8 +93,8 @@ void MultiFilter::setQ(float newQ)
         q = newQ;
     }else
     {
-        alpha2 = 1.0f / 0.7f;
-        q = 0.7f;
+        alpha2 = 1.0f / 0.707f;
+        q = 0.707f;
     }
 }
 
