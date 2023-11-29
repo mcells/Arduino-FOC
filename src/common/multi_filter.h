@@ -28,12 +28,18 @@ public:
     };
 
     float operator() (float x);
-    float Tf; //!< Multi filter time constant
 
-    void setQ(float newQ);  //!< Set filter resonance
-    void setNotchDepth(float newNotchDepth); //!< Set notch filter depth
-    void setfrequency(float newfrequency); //!< set filter frequency instead of time constant
-    void setReturnType(returnType type); //!< change between low-, high-, bandpass, or notch output as default return value
+    void setQ(float newQ);                      //!< Set filter resonance
+    void setTf(float newTf);                    //!< Set time constant
+    void setFrequency(float newFrequency);      //!< set filter frequency instead of time constant
+    void setNotchDepth(float newNotchDepth);    //!< Set notch filter depth
+    void setReturnType(returnType type);        //!< change between low-, high-, bandpass, or notch output as default return value
+
+    float getTf() {return Tf;}
+    float getFrequency() {return 1.0f/Tf;}
+    float getQ() {return q;}
+    float getNotchdepth() {return notchDepth;}
+    returnType getReturnType() {return defaultFilter;}
 
     //!< Get different filter outputs
     float getLp();
@@ -55,8 +61,11 @@ protected:
     float yb_prev; //!< filtered bandpass value in previous execution step 
     float yn_prev; //!< filtered notch value in previous execution step 
 
-    float q = 0.707f;       //!< filter resonance.
-    float notchDepth = 0.0f;       //!< notch filter cut depth.
+    float Tf;                           //!< Multi filter time constant
+    float timeConstFactor;              //!< precompute divided constant to save time in the loop
+    float q = 0.707f;                   //!< filter resonance (quality factor)
+    float notchDepth = 0.0f;            //!< notch filter cut depth
+    float notchScalingfactor = 1.0f;    //!< precomputed on changing notchDepth to correct output scale
 
     float alpha1;
     float alpha2 = 1.0f/q;
