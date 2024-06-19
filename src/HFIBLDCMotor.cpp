@@ -150,6 +150,8 @@ int  HFIBLDCMotor::initFOC() {
   motor_status = FOCMotorStatus::motor_calibrating;
   polarity_cycles=(int)(3.5*(Ld/phase_resistance)/Ts);
   flux_linkage = 60.0 / ( _sqrt(3) * _PI * (KV_rating) * (pole_pairs * 2));
+  PID_current_d.output_ramp = (20000.0f*0.02f*Ld)/Ts; // A per cycle V=(A*H)/s
+  PID_current_q.output_ramp = (20000.0f*0.05f*Lq)/Ts; // A per cycle
   // align motor if necessary
   // alignment necessary for encoders!
   // sensor and motor alignment - can be skipped
@@ -432,24 +434,30 @@ void IRAM_ATTR HFIBLDCMotor::process_hfi(){
     if(flux_observer_angle<0) {flux_observer_angle+=_2PI;}
     
     bemf=(polarity_correction*(voltage.q -phase_resistance * current_meas.q));
-    
+    flux_observer_velocity=((bemf*KV_rating*_SQRT3*_2PI)/(60.0f));
+
     if(bemf>bemf_threshold || bemf<-bemf_threshold){
       bemf_count+=2;
     }else{
       bemf_count-=2;
       if(bemf_count<0) {bemf_count=0;}
     }
-
-
     if(bemf_count>100){ // use flux observer after 
       bemf_count+=1;
       if(bemf_count>200){bemf_count=200;}
-      sensorless_out=flux_observer_angle;
-      flux_observer_velocity=((bemf*KV_rating*_SQRT3*_2PI)/(60.0f));
-      sensorless_velocity = flux_observer_velocity;
+    }
+
+    if(bemf_count>102){
+      // sensorless_out=flux_observer_angle;
+      // sensorless_velocity = flux_observer_velocity;
       hfi_v_act=0;
     }else // do hfi
     {
+      if(usedFOlast==true){
+        usedFOlast=false;
+        hfi_int = flux_observer_velocity * pole_pairs * Ts;
+        hfi_angle = flux_observer_angle;
+      }
 
       if (hfi_firstcycle)
       {
@@ -507,8 +515,16 @@ void IRAM_ATTR HFIBLDCMotor::process_hfi(){
       // hfi_velocity=hfi_int /(Ts*pole_pairs);
       hfi_velocity=hfi_int * Ts_pp_div;
       hfi_angle += hfi_gain1 * Ts * hfi_error + hfi_int;    // This is the integrator and the double&triple integrator
-      sensorless_out = hfi_angle;
-      sensorless_velocity = hfi_velocity;
+
+      while (hfi_angle < 0) { hfi_angle += _2PI;}
+	    while (hfi_angle >=  _2PI) { hfi_angle -= _2PI;}
+      while (hfi_int < -_PI) { hfi_int += _2PI;}
+	    while (hfi_int >=  _PI) { hfi_int -= _2PI;}
+      while (hfi_acc < -_PI) { hfi_acc += _2PI;}
+	    while (hfi_acc >=  _PI) { hfi_acc -= _2PI;}
+
+      // sensorless_out = hfi_angle;
+      // sensorless_velocity = hfi_velocity;
       hfi_angle_prev = hfi_angle;
     }
 
@@ -529,6 +545,17 @@ void IRAM_ATTR HFIBLDCMotor::process_hfi(){
   
     voltage.d += hfi_v_act;
 
+    if (bemf_count < 100)
+    {
+      sensorless_out = hfi_angle;
+      sensorless_velocity = hfi_velocity;
+    }else
+    {
+      sensorless_out = flux_observer_angle;
+      sensorless_velocity = flux_observer_velocity;
+      usedFOlast = true;
+    }
+    
     sensorless_out_prev = sensorless_out;
   }
 
@@ -573,11 +600,8 @@ void IRAM_ATTR HFIBLDCMotor::process_hfi(){
   if(start_polarity_alignment){
     return;
   }
-  while (sensorless_out < 0) { sensorless_out += _2PI;}
-	while (sensorless_out >=  _2PI) { sensorless_out -= _2PI;}
-  
-  while (hfi_int < -_PI) { hfi_int += _2PI;}
-	while (hfi_int >=  _PI) { hfi_int -= _2PI;}
+  // while (sensorless_out < 0) { sensorless_out += _2PI;}
+	// while (sensorless_out >=  _2PI) { sensorless_out -= _2PI;}
 
   float d_angle = sensorless_out - electrical_angle;
   if(abs(d_angle) > (0.8f*_2PI) ) hfi_full_turns += ( d_angle > 0.0f ) ? -1.0f : 1.0f; 

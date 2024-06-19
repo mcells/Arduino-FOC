@@ -96,7 +96,8 @@ PhaseCurrent_s LowsideCurrentSense::getPhaseCurrents(){
 // 3 - success but gains inverted
 // 4 - success but pins reconfigured and gains inverted
 int LowsideCurrentSense::driverAlign(float voltage){
-        
+    float temp_current = 0.0f;
+
     int exit_flag = 1;
     if(skip_align) return exit_flag;
 
@@ -116,6 +117,7 @@ int LowsideCurrentSense::driverAlign(float voltage){
             _delay(3);
         }
         driver->setPwm(0, 0, 0);
+        temp_current += fabs(c.a - offset_ia);
         // align phase A
         float ab_ratio = c.b ? fabs(c.a / c.b) : 0;
         float ac_ratio = c.c ? fabs(c.a / c.c) : 0;
@@ -163,6 +165,7 @@ int LowsideCurrentSense::driverAlign(float voltage){
             _delay(3);
         }
         driver->setPwm(0, 0, 0);
+        temp_current += fabs(c.b - offset_ib);
         float ba_ratio = c.a ? fabs(c.b / c.a) : 0;
         float bc_ratio = c.c ? fabs(c.b / c.c) : 0;
         if(_isset(pinA) && ba_ratio > 1.5f ){ // should be ~2
@@ -210,6 +213,7 @@ int LowsideCurrentSense::driverAlign(float voltage){
             _delay(3);
         }
         driver->setPwm(0, 0, 0);
+        temp_current += fabs(c.c - offset_ic);
         float ca_ratio = c.a ? fabs(c.c / c.a) : 0;
         float cb_ratio = c.b ? fabs(c.c / c.b) : 0;
         if(_isset(pinA) && ca_ratio > 1.5f ){ // should be ~2
@@ -241,6 +245,8 @@ int LowsideCurrentSense::driverAlign(float voltage){
             return 0;
         }   
     }
+    float estimated_phase_resistance = voltage / (temp_current/(3 - !_isset(pinA) - !_isset(pinB) - !_isset(pinC)));
+    SIMPLEFOC_DEBUG("CUR: Estimated phase resistance is ", estimated_phase_resistance);
 
     if(gain_a < 0 || gain_b < 0 || gain_c < 0) exit_flag +=2;
     // exit flag is either
