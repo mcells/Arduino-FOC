@@ -201,10 +201,16 @@ static void IRAM_ATTR mcpwm0_isr_handler(void*){
   MCPWM0.int_clr.timer0_tez_int_clr = mcpwm_intr_status_high;
   // low side
   MCPWM0.int_clr.timer0_tep_int_clr = mcpwm_intr_status_low;
-  delayMicroseconds(0);
+  
+  NOP();NOP();NOP();NOP();
+
+  NOP();NOP();NOP();NOP();
+
+  NOP();NOP();NOP();NOP();
+
+  NOP();NOP();NOP();NOP();
+
   // GPIO.out_w1tc = ((uint32_t)1 << 15);
-  
-  
 }
 
 static void IRAM_ATTR mcpwm1_isr_handler(void*) __attribute__ ((unused));
@@ -258,7 +264,14 @@ static void IRAM_ATTR mcpwm1_isr_handler(void*){
   MCPWM1.int_clr.timer0_tez_int_clr = mcpwm_intr_status_high;
   // low side
   MCPWM1.int_clr.timer0_tep_int_clr = mcpwm_intr_status_low;
-  delayMicroseconds(0);
+  
+  NOP();NOP();NOP();NOP();
+
+  NOP();NOP();NOP();NOP();
+
+  NOP();NOP();NOP();NOP();
+
+  NOP();NOP();NOP();NOP();
 }
 
 

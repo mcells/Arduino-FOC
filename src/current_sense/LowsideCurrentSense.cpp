@@ -255,6 +255,6 @@ int LowsideCurrentSense::driverAlign(float voltage){
     // 2 - success but pins reconfigured
     // 3 - success but gains inverted
     // 4 - success but pins reconfigured and gains inverted
-
+    driver->setPwm(0, 0, 0);
     return exit_flag;
 }
