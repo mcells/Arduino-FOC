@@ -117,7 +117,7 @@ int LowsideCurrentSense::driverAlign(float voltage){
             _delay(3);
         }
         driver->setPwm(0, 0, 0);
-        temp_current += fabs(c.a - offset_ia);
+        temp_current += fabs(c.a);
         // align phase A
         float ab_ratio = c.b ? fabs(c.a / c.b) : 0;
         float ac_ratio = c.c ? fabs(c.a / c.c) : 0;
@@ -165,7 +165,7 @@ int LowsideCurrentSense::driverAlign(float voltage){
             _delay(3);
         }
         driver->setPwm(0, 0, 0);
-        temp_current += fabs(c.b - offset_ib);
+        temp_current += fabs(c.b);
         float ba_ratio = c.a ? fabs(c.b / c.a) : 0;
         float bc_ratio = c.c ? fabs(c.b / c.c) : 0;
         if(_isset(pinA) && ba_ratio > 1.5f ){ // should be ~2
@@ -213,7 +213,7 @@ int LowsideCurrentSense::driverAlign(float voltage){
             _delay(3);
         }
         driver->setPwm(0, 0, 0);
-        temp_current += fabs(c.c - offset_ic);
+        temp_current += fabs(c.c);
         float ca_ratio = c.a ? fabs(c.c / c.a) : 0;
         float cb_ratio = c.b ? fabs(c.c / c.b) : 0;
         if(_isset(pinA) && ca_ratio > 1.5f ){ // should be ~2
