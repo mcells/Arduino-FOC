@@ -149,6 +149,8 @@ class FOCMotor
      */
     float electricalAngle();
 
+    int characteriseMotor(float voltage);
+
     // state variables
     float target; //!< current target value - depends of the controller
     float feed_forward_velocity = 0.0f; //!< current feed forward velocity
@@ -247,7 +249,9 @@ class FOCMotor
     Print* monitor_port; //!< Serial terminal variable if provided
   private:
     // monitor counting variable
-    unsigned int monitor_cnt = 0 ; //!< counting variable
+    unsigned int monitor_cnt = 0 ;
+    
+    //!< counting variable
 };
 
 
