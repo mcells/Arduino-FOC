@@ -85,26 +85,27 @@ int FOCMotor::characteriseMotor(float voltage){
     {
       return 1;
     }
-    
+    float current_electric_angle = electricalAngle();
     // set phases A, B and C down
-    setPhaseVoltage(0, 0, electrical_angle);
+    setPhaseVoltage(0, 0, current_electric_angle);
     _delay(500);
     
     PhaseCurrent_s zerocurrent_raw = current_sense->readAverageCurrents();
-    DQCurrent_s zerocurrent = current_sense->getDQCurrents(current_sense->getABCurrents(zerocurrent_raw), electrical_angle);
+    DQCurrent_s zerocurrent = current_sense->getDQCurrents(current_sense->getABCurrents(zerocurrent_raw), current_electric_angle);
 
 
     // set phase A active and phases B and C down
     // 300 ms of ramping
+    current_electric_angle = electricalAngle();
     for(int i=0; i < 100; i++){
-        setPhaseVoltage(0, voltage/100.0*((float)i), electrical_angle);
+        setPhaseVoltage(0, voltage/100.0*((float)i), current_electric_angle);
         _delay(3);
     }
     _delay(10);
     PhaseCurrent_s r_currents_raw = current_sense->readAverageCurrents();
-    DQCurrent_s r_currents = current_sense->getDQCurrents(current_sense->getABCurrents(r_currents_raw), electrical_angle);
+    DQCurrent_s r_currents = current_sense->getDQCurrents(current_sense->getABCurrents(r_currents_raw), current_electric_angle);
     
-    setPhaseVoltage(0, 0, electrical_angle);
+    setPhaseVoltage(0, 0, current_electric_angle);
     
     float resistance = voltage / (1.5f * (r_currents.d - zerocurrent.d));
     SIMPLEFOC_DEBUG("MOT: Estimated phase to phase resistance: ", 2.0f * resistance);
@@ -130,21 +131,22 @@ int FOCMotor::characteriseMotor(float voltage){
 
       for (size_t i = 0; i < cycles; i++)
       {
+        current_electric_angle = electricalAngle();
         // read zero current
         zerocurrent_raw = current_sense->readAverageCurrents(20);
-        zerocurrent = current_sense->getDQCurrents(current_sense->getABCurrents(zerocurrent_raw), electrical_angle);
+        zerocurrent = current_sense->getDQCurrents(current_sense->getABCurrents(zerocurrent_raw), current_electric_angle);
         
         // step the voltage
-        setPhaseVoltage(voltage, 0, electrical_angle);
+        setPhaseVoltage(voltage, 0, current_electric_angle);
         t0 = micros();
         delayMicroseconds(risetime_us);
 
         t1a = micros();
         PhaseCurrent_s l_currents_raw = current_sense->getPhaseCurrents();
         t1b = micros();
-        setPhaseVoltage(0, 0, electrical_angle);
+        setPhaseVoltage(0, 0, current_electric_angle);
 
-        DQCurrent_s l_currents = current_sense->getDQCurrents(current_sense->getABCurrents(l_currents_raw), electrical_angle);
+        DQCurrent_s l_currents = current_sense->getDQCurrents(current_sense->getABCurrents(l_currents_raw), current_electric_angle);
         delayMicroseconds(settle_us); // wait a bit for the currents to go to 0 again
 
 
@@ -164,21 +166,22 @@ int FOCMotor::characteriseMotor(float voltage){
 
       for (size_t i = 0; i < cycles; i++)
       {
+        current_electric_angle = electricalAngle();
         // read zero current
         zerocurrent_raw = current_sense->readAverageCurrents(20);
-        zerocurrent = current_sense->getDQCurrents(current_sense->getABCurrents(zerocurrent_raw), electrical_angle);
+        zerocurrent = current_sense->getDQCurrents(current_sense->getABCurrents(zerocurrent_raw), current_electric_angle);
         
         // step the voltage
-        setPhaseVoltage(0, voltage, electrical_angle);
+        setPhaseVoltage(0, voltage, current_electric_angle);
         t0 = micros();
         delayMicroseconds(risetime_us);
 
         t1a = micros();
         PhaseCurrent_s l_currents_raw = current_sense->getPhaseCurrents();
         t1b = micros();
-        setPhaseVoltage(0, 0, electrical_angle);
+        setPhaseVoltage(0, 0, current_electric_angle);
 
-        DQCurrent_s l_currents = current_sense->getDQCurrents(current_sense->getABCurrents(l_currents_raw), electrical_angle);
+        DQCurrent_s l_currents = current_sense->getDQCurrents(current_sense->getABCurrents(l_currents_raw), current_electric_angle);
         delayMicroseconds(settle_us); // wait a bit for the currents to go to 0 again
 
 
