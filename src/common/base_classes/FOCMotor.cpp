@@ -84,9 +84,16 @@ float FOCMotor::electricalAngle(){
 int FOCMotor::characteriseMotor(float voltage){
     if (!this->current_sense || !this->current_sense->initialized)
     {
-      SIMPLEFOC_DEBUG("MOT: Cannot characterise motor: CS unconfigured or not initialized");
+      SIMPLEFOC_DEBUG("ERR: MOT: Cannot characterise motor: CS unconfigured or not initialized");
       return 1;
     }
+
+    if (voltage <= 0.0f){
+      SIMPLEFOC_DEBUG("ERR: MOT: Cannot characterise motor: Voltage is negative or less than zero");
+      return 2;
+    }
+    voltage = _constrain(voltage, 0.0f, voltage_limit);
+    
     float current_electric_angle = electricalAngle();
 
     float correction_factor = 1.5f; // 1.5 for 3 phase motors, because we measure over a series-parallel connection. TODO: what about 2 phase motors?
@@ -157,6 +164,7 @@ int FOCMotor::characteriseMotor(float voltage){
         DQCurrent_s l_currents = current_sense->getDQCurrents(current_sense->getABCurrents(l_currents_raw), current_electric_angle);
         delayMicroseconds(settle_us); // wait a bit for the currents to go to 0 again
 
+        if (t0 > t1a || t0 > t1b) continue; // safety first
 
         // calculate the inductance
         float dt = 0.5f*(t1a + t1b - 2*t0)/1000000.0f;
@@ -190,6 +198,7 @@ int FOCMotor::characteriseMotor(float voltage){
         DQCurrent_s l_currents = current_sense->getDQCurrents(current_sense->getABCurrents(l_currents_raw), current_electric_angle);
         delayMicroseconds(settle_us); // wait a bit for the currents to go to 0 again
 
+        if (t0 > t1a || t0 > t1b) continue; // safety first
 
         // calculate the inductance
         float dt = 0.5f*(t1a + t1b - 2*t0)/1000000.0f;
@@ -208,8 +217,11 @@ int FOCMotor::characteriseMotor(float voltage){
       SIMPLEFOC_DEBUG("MOT: Estimated time constant in us: ", timeconstant * 1000000.0f);
 
     }
-    
-    
+
+    SIMPLEFOC_DEBUG("MOT: Inductance measurement complete!");
+    SIMPLEFOC_DEBUG("MOT: Measured D-inductance in mH: ", Ld * 1000.0f);
+    SIMPLEFOC_DEBUG("MOT: Measured Q-inductance in mH: ", Lq * 1000.0f);
+
     return 0;
     
 }
