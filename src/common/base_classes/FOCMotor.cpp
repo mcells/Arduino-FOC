@@ -117,12 +117,12 @@ int FOCMotor::characteriseMotor(float voltage){
     float Lq = 0;
     float Ld = 0;
 
-    uint cycles = 20;
+    uint cycles = 10;
     uint risetime_us = 200;
     uint settle_us = 100000;
     float timeconstant = 0.0f;
 
-    for (size_t i = 0; i < 2; i++)
+    for (size_t i = 0; i < 4; i++)
     {
       for (size_t i = 0; i < cycles; i++)
       {
@@ -153,7 +153,7 @@ int FOCMotor::characteriseMotor(float voltage){
         
       }
 
-      Lq /= cycles;
+      Lq /= cycles + 1;
 
       SIMPLEFOC_DEBUG("MOT: Estimated Q-inductance in mH: ", Lq * 1000.0f);
       
@@ -188,7 +188,7 @@ int FOCMotor::characteriseMotor(float voltage){
         
       }
 
-      Ld /= cycles;
+      Ld /= cycles + 1;
 
       SIMPLEFOC_DEBUG("MOT: Estimated D-inductance in mH: ", Ld * 1000.0f);
       
