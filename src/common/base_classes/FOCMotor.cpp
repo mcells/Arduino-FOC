@@ -80,13 +80,18 @@ float FOCMotor::electricalAngle(){
   return  _normalizeAngle( (float)(sensor_direction * pole_pairs) * sensor->getMechanicalAngle()  - zero_electric_angle );
 }
 
+// Measure resistance and inductance of a motor
 int FOCMotor::characteriseMotor(float voltage){
     if (!this->current_sense || !this->current_sense->initialized)
     {
+      SIMPLEFOC_DEBUG("MOT: Cannot characterise motor: CS unconfigured or not initialized");
       return 1;
     }
     float current_electric_angle = electricalAngle();
-    // set phases A, B and C down
+
+    float correction_factor = 1.5f; // 1.5 for 3 phase motors, because we measure over a series-parallel connection. TODO: what about 2 phase motors?
+
+    // Apply zero volts
     setPhaseVoltage(0, 0, current_electric_angle);
     _delay(500);
     
@@ -94,7 +99,7 @@ int FOCMotor::characteriseMotor(float voltage){
     DQCurrent_s zerocurrent = current_sense->getDQCurrents(current_sense->getABCurrents(zerocurrent_raw), current_electric_angle);
 
 
-    // set phase A active and phases B and C down
+    // Ramp and hold the voltage to measure resistance
     // 300 ms of ramping
     current_electric_angle = electricalAngle();
     for(int i=0; i < 100; i++){
@@ -107,7 +112,7 @@ int FOCMotor::characteriseMotor(float voltage){
     
     setPhaseVoltage(0, 0, current_electric_angle);
     
-    float resistance = voltage / (1.5f * (r_currents.d - zerocurrent.d));
+    float resistance = voltage / (correction_factor * (r_currents.d - zerocurrent.d));
     SIMPLEFOC_DEBUG("MOT: Estimated phase to phase resistance: ", 2.0f * resistance);
     _delay(100);
 
@@ -152,7 +157,7 @@ int FOCMotor::characteriseMotor(float voltage){
 
         // calculate the inductance
         float dt = 0.5f*(t1a + t1b - 2*t0)/1000000.0f;
-        inductanceq += fabs(- (resistance * dt) / log((voltage - resistance * (l_currents.q - zerocurrent.q)) / voltage))/1.5f;
+        inductanceq += fabs(- (resistance * dt) / log((voltage - resistance * fabs(l_currents.q - zerocurrent.q)) / voltage))/correction_factor;
         
         // SIMPLEFOC_DEBUG("MOT: Estimated Q-inductance in mH: ", inductanceq * 1000.0f);
         
@@ -187,7 +192,7 @@ int FOCMotor::characteriseMotor(float voltage){
 
         // calculate the inductance
         float dt = 0.5f*(t1a + t1b - 2*t0)/1000000.0f;
-        inductanced += fabs(- (resistance * dt) / log((voltage - resistance * (l_currents.d - zerocurrent.d)) / voltage))/1.5f;
+        inductanced += fabs(- (resistance * dt) / log((voltage - resistance * fabs(l_currents.d - zerocurrent.d)) / voltage))/correction_factor;
 
 
         // SIMPLEFOC_DEBUG("MOT: Estimated D-inductance in mH: ", inductanced * 1000.0f);
