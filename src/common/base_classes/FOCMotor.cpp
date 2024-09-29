@@ -131,92 +131,104 @@ int FOCMotor::characteriseMotor(float voltage){
     unsigned long t0 = 0;
     unsigned long t1a = 0;
     unsigned long t1b = 0;
-    float Lq = 0;
+    float Ltemp = 0;
     float Ld = 0;
+    float Lq = 0;
 
-    uint iterations = 5;
-    uint cycles = 4;
+    uint iterations = 40;
+    uint cycles = 3;
     uint risetime_us = 200; // short for worst case scenario with low inductance
     uint settle_us = 100000; // long for worst case scenario with high inductance
 
-    for (size_t i = 0; i < iterations; i++)
+    for (size_t axis = 0; axis < 2; axis++)
     {
-      float inductanceq = 0.0f;
-      float inductanced = 0.0f;
-
-      for (size_t i = 0; i < cycles; i++)
+      for (size_t i = 0; i < iterations; i++)
       {
-        current_electric_angle = electricalAngle();
-        // read zero current
-        zerocurrent_raw = current_sense->readAverageCurrents(20);
-        zerocurrent = current_sense->getDQCurrents(current_sense->getABCurrents(zerocurrent_raw), current_electric_angle);
+        // current_electric_angle = i * _2PI / iterations;
+        float inductanceq = 0.0f;
+        float inductanced = 0.0f;
         
-        // step the voltage
-        setPhaseVoltage(voltage, 0, current_electric_angle);
-        t0 = micros();
-        delayMicroseconds(risetime_us);
+        float qcurrent = 0.0f;
+        float dcurrent = 0.0f;
+        for (size_t j = 0; j < cycles; j++)
+        {
+          // current_electric_angle = electricalAngle();
+          // read zero current
+          zerocurrent_raw = current_sense->readAverageCurrents(10);
+          zerocurrent = current_sense->getDQCurrents(current_sense->getABCurrents(zerocurrent_raw), current_electric_angle);
+          
+          // step the voltage
+          setPhaseVoltage(0, voltage, current_electric_angle);
+          t0 = micros();
+          delayMicroseconds(risetime_us);
 
-        t1a = micros();
-        PhaseCurrent_s l_currents_raw = current_sense->getPhaseCurrents();
-        t1b = micros();
-        setPhaseVoltage(0, 0, current_electric_angle);
+          t1a = micros();
+          PhaseCurrent_s l_currents_raw = current_sense->getPhaseCurrents();
+          t1b = micros();
+          setPhaseVoltage(0, 0, current_electric_angle);
 
-        DQCurrent_s l_currents = current_sense->getDQCurrents(current_sense->getABCurrents(l_currents_raw), current_electric_angle);
-        delayMicroseconds(settle_us); // wait a bit for the currents to go to 0 again
+          DQCurrent_s l_currents = current_sense->getDQCurrents(current_sense->getABCurrents(l_currents_raw), current_electric_angle);
+          delayMicroseconds(settle_us); // wait a bit for the currents to go to 0 again
 
-        if (t0 > t1a || t0 > t1b) continue; // safety first
+          if (t0 > t1a || t0 > t1b) continue; // safety first
 
-        // calculate the inductance
-        float dt = 0.5f*(t1a + t1b - 2*t0)/1000000.0f;
-        inductanceq += fabs(- (resistance * dt) / log((voltage - resistance * fabs(l_currents.q - zerocurrent.q)) / voltage))/correction_factor;
+          // calculate the inductance
+          float dt = 0.5f*(t1a + t1b - 2*t0)/1000000.0f;
+          inductanced += fabs(- (resistance * dt) / log((voltage - resistance * fabs(l_currents.d - zerocurrent.d)) / voltage))/correction_factor;
+          qcurrent+= l_currents.q - zerocurrent.q;
+          dcurrent+= l_currents.d - zerocurrent.d;
+        }
+        qcurrent /= cycles;
+        dcurrent /= cycles;
+        float delta = qcurrent / (fabsf(dcurrent) + fabsf(qcurrent));
+
+
+        inductanced /= cycles;
+        float lastD = Ltemp;
+        Ltemp = i == 0 ? inductanced : Ltemp * 0.8 + inductanced * 0.2;
         
+        // SIMPLEFOC_DEBUG("MOT: Estimated D-inductance in mH: ", L * 1000.0f);
+        
+        float timeconstant = fabs(Ltemp / resistance); // Timeconstant of an RL circuit (L/R) 
+        risetime_us = _constrain(1000000 * timeconstant, 100, 10000); // Wait as long as possible (due to limited timing accuracy & sample rate), but as short as needed (while the current still changes)
+        settle_us = 10 * risetime_us;
+        SIMPLEFOC_DEBUG("MOT: Estimated time constant in us: ", timeconstant * 1000000.0f);
+
+        Serial.printf(">inductance:%f:%f|xy\n", current_electric_angle, Ltemp * 1000.0f);
+
+        if (axis)
+        {
+          qcurrent *= -1.0f;
+        }
+        
+        if (qcurrent < 0)
+        {
+          current_electric_angle+=fabsf(delta);
+        } else
+        {
+          current_electric_angle-=fabsf(delta);
+        }
+        current_electric_angle = fmodf(current_electric_angle, _2PI);
+        if(current_electric_angle < 0.0f) current_electric_angle += _2PI;
+       
       }
 
-      inductanceq /= cycles;
-      Lq = i == 0 ? inductanceq : Lq * 0.6 + inductanceq * 0.4;
+      current_electric_angle += 0.5f * _PI;
+      current_electric_angle = fmodf(current_electric_angle, _2PI);
+      if(current_electric_angle < 0.0f) current_electric_angle += _2PI;
+      iterations /= 2;
 
-      SIMPLEFOC_DEBUG("MOT: Estimated Q-inductance in mH: ", Lq * 1000.0f);
-      
-
-      for (size_t i = 0; i < cycles; i++)
+      if (axis == 0)
       {
-        current_electric_angle = electricalAngle();
-        // read zero current
-        zerocurrent_raw = current_sense->readAverageCurrents(20);
-        zerocurrent = current_sense->getDQCurrents(current_sense->getABCurrents(zerocurrent_raw), current_electric_angle);
-        
-        // step the voltage
-        setPhaseVoltage(0, voltage, current_electric_angle);
-        t0 = micros();
-        delayMicroseconds(risetime_us);
-
-        t1a = micros();
-        PhaseCurrent_s l_currents_raw = current_sense->getPhaseCurrents();
-        t1b = micros();
-        setPhaseVoltage(0, 0, current_electric_angle);
-
-        DQCurrent_s l_currents = current_sense->getDQCurrents(current_sense->getABCurrents(l_currents_raw), current_electric_angle);
-        delayMicroseconds(settle_us); // wait a bit for the currents to go to 0 again
-
-        if (t0 > t1a || t0 > t1b) continue; // safety first
-
-        // calculate the inductance
-        float dt = 0.5f*(t1a + t1b - 2*t0)/1000000.0f;
-        inductanced += fabs(- (resistance * dt) / log((voltage - resistance * fabs(l_currents.d - zerocurrent.d)) / voltage))/correction_factor;
-
+          Lq = Ltemp;
+      }else
+      {
+        Ld = Ltemp;
       }
-
-      inductanced /= cycles;
-      Ld = i == 0 ? inductanced : Ld * 0.6 + inductanced * 0.4;
-
-      SIMPLEFOC_DEBUG("MOT: Estimated D-inductance in mH: ", Ld * 1000.0f);
       
-      float timeconstant = fabs(0.5f*(Ld + Lq) / resistance); // Timeconstant of an RL circuit (L/R) 
-      risetime_us = _constrain(1000000 * timeconstant, 100, 10000); // Wait as long as possible (due to limited timing accuracy & sample rate), but as short as needed (while the current still changes)
-      settle_us = 10 * risetime_us;
-      SIMPLEFOC_DEBUG("MOT: Estimated time constant in us: ", timeconstant * 1000000.0f);
-
     }
+    
+    
 
     SIMPLEFOC_DEBUG("MOT: Inductance measurement complete!");
     SIMPLEFOC_DEBUG("MOT: Measured D-inductance in mH: ", Ld * 1000.0f);
