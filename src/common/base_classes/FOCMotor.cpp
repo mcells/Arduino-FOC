@@ -119,6 +119,7 @@ int FOCMotor::characteriseMotor(float voltage){
 
     uint cycles = 20;
     uint risetime_us = 200;
+    uint settle_us = 100000;
     float timeconstant = 0.0f;
 
     for (size_t i = 0; i < 2; i++)
@@ -140,7 +141,7 @@ int FOCMotor::characteriseMotor(float voltage){
         setPhaseVoltage(0, 0, electrical_angle);
 
         DQCurrent_s l_currents = current_sense->getDQCurrents(current_sense->getABCurrents(l_currents_raw), electrical_angle);
-        delayMicroseconds(100000); // wait a bit for the currents to go to 0 again
+        delayMicroseconds(settle_us); // wait a bit for the currents to go to 0 again
 
 
         // calculate the inductance
@@ -174,7 +175,7 @@ int FOCMotor::characteriseMotor(float voltage){
         setPhaseVoltage(0, 0, electrical_angle);
 
         DQCurrent_s l_currents = current_sense->getDQCurrents(current_sense->getABCurrents(l_currents_raw), electrical_angle);
-        delayMicroseconds(100000); // wait a bit for the currents to go to 0 again
+        delayMicroseconds(settle_us); // wait a bit for the currents to go to 0 again
 
 
         // calculate the inductance
@@ -193,7 +194,7 @@ int FOCMotor::characteriseMotor(float voltage){
       
       timeconstant = fabs(0.5f*(Ld + Lq) / resistance);
       risetime_us = _constrain(1000000 * timeconstant, 100, 10000);
-
+      settle_us = 10 * risetime_us;
       SIMPLEFOC_DEBUG("MOT: Estimated time constant in us: ", timeconstant * 1000000.0f);
 
     }
