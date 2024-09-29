@@ -90,6 +90,8 @@ int FOCMotor::characteriseMotor(float voltage){
     float current_electric_angle = electricalAngle();
 
     float correction_factor = 1.5f; // 1.5 for 3 phase motors, because we measure over a series-parallel connection. TODO: what about 2 phase motors?
+    
+    SIMPLEFOC_DEBUG("MOT: Measuring phase to phase resistance, keep motor still...");
 
     // Apply zero volts
     setPhaseVoltage(0, 0, current_electric_angle);
@@ -117,6 +119,8 @@ int FOCMotor::characteriseMotor(float voltage){
     _delay(100);
 
     //start inductance measurement
+    SIMPLEFOC_DEBUG("MOT: Measuring inductance, keep motor still...");
+
     unsigned long t0 = 0;
     unsigned long t1a = 0;
     unsigned long t1b = 0;
@@ -125,9 +129,8 @@ int FOCMotor::characteriseMotor(float voltage){
 
     uint iterations = 5;
     uint cycles = 4;
-    uint risetime_us = 200;
-    uint settle_us = 100000;
-    float timeconstant = 0.0f;
+    uint risetime_us = 200; // short for worst case scenario with low inductance
+    uint settle_us = 100000; // long for worst case scenario with high inductance
 
     for (size_t i = 0; i < iterations; i++)
     {
@@ -158,8 +161,6 @@ int FOCMotor::characteriseMotor(float voltage){
         // calculate the inductance
         float dt = 0.5f*(t1a + t1b - 2*t0)/1000000.0f;
         inductanceq += fabs(- (resistance * dt) / log((voltage - resistance * fabs(l_currents.q - zerocurrent.q)) / voltage))/correction_factor;
-        
-        // SIMPLEFOC_DEBUG("MOT: Estimated Q-inductance in mH: ", inductanceq * 1000.0f);
         
       }
 
@@ -194,9 +195,6 @@ int FOCMotor::characteriseMotor(float voltage){
         float dt = 0.5f*(t1a + t1b - 2*t0)/1000000.0f;
         inductanced += fabs(- (resistance * dt) / log((voltage - resistance * fabs(l_currents.d - zerocurrent.d)) / voltage))/correction_factor;
 
-
-        // SIMPLEFOC_DEBUG("MOT: Estimated D-inductance in mH: ", inductanced * 1000.0f);
-        
       }
 
       inductanced /= cycles;
@@ -204,8 +202,8 @@ int FOCMotor::characteriseMotor(float voltage){
 
       SIMPLEFOC_DEBUG("MOT: Estimated D-inductance in mH: ", Ld * 1000.0f);
       
-      timeconstant = fabs(0.5f*(Ld + Lq) / resistance);
-      risetime_us = _constrain(1000000 * timeconstant, 100, 10000);
+      float timeconstant = fabs(0.5f*(Ld + Lq) / resistance); // Timeconstant of an RL circuit (L/R) 
+      risetime_us = _constrain(1000000 * timeconstant, 100, 10000); // Wait as long as possible (due to limited timing accuracy & sample rate), but as short as needed (while the current still changes)
       settle_us = 10 * risetime_us;
       SIMPLEFOC_DEBUG("MOT: Estimated time constant in us: ", timeconstant * 1000000.0f);
 
