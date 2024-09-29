@@ -117,13 +117,17 @@ int FOCMotor::characteriseMotor(float voltage){
     float Lq = 0;
     float Ld = 0;
 
-    uint cycles = 10;
+    uint iterations = 5;
+    uint cycles = 4;
     uint risetime_us = 200;
     uint settle_us = 100000;
     float timeconstant = 0.0f;
 
-    for (size_t i = 0; i < 4; i++)
+    for (size_t i = 0; i < iterations; i++)
     {
+      float inductanceq = 0.0f;
+      float inductanced = 0.0f;
+
       for (size_t i = 0; i < cycles; i++)
       {
         // read zero current
@@ -146,14 +150,14 @@ int FOCMotor::characteriseMotor(float voltage){
 
         // calculate the inductance
         float dt = 0.5f*(t1a + t1b - 2*t0)/1000000.0f;
-        float inductanceq = (- (resistance * dt) / log((voltage - resistance * (l_currents.q - zerocurrent.q)) / voltage))/1.5f;
-        Lq += inductanceq;
-
+        inductanceq += fabs(- (resistance * dt) / log((voltage - resistance * (l_currents.q - zerocurrent.q)) / voltage))/1.5f;
+        
         // SIMPLEFOC_DEBUG("MOT: Estimated Q-inductance in mH: ", inductanceq * 1000.0f);
         
       }
 
-      Lq /= cycles + 1;
+      inductanceq /= cycles;
+      Lq = i == 0 ? inductanceq : Lq * 0.6 + inductanceq * 0.4;
 
       SIMPLEFOC_DEBUG("MOT: Estimated Q-inductance in mH: ", Lq * 1000.0f);
       
@@ -180,15 +184,15 @@ int FOCMotor::characteriseMotor(float voltage){
 
         // calculate the inductance
         float dt = 0.5f*(t1a + t1b - 2*t0)/1000000.0f;
-        float inductanced = (- (resistance * dt) / log((voltage - resistance * (l_currents.d - zerocurrent.d)) / voltage))/1.5f;
+        inductanced += fabs(- (resistance * dt) / log((voltage - resistance * (l_currents.d - zerocurrent.d)) / voltage))/1.5f;
 
-        Ld += inductanced;
 
         // SIMPLEFOC_DEBUG("MOT: Estimated D-inductance in mH: ", inductanced * 1000.0f);
         
       }
 
-      Ld /= cycles + 1;
+      inductanced /= cycles;
+      Ld = i == 0 ? inductanced : Ld * 0.6 + inductanced * 0.4;
 
       SIMPLEFOC_DEBUG("MOT: Estimated D-inductance in mH: ", Ld * 1000.0f);
       
