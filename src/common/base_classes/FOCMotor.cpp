@@ -121,6 +121,13 @@ int FOCMotor::characteriseMotor(float voltage){
     
     setPhaseVoltage(0, 0, current_electric_angle);
     
+    if (fabsf(r_currents.d - zerocurrent.d) < 0.2f)
+    {
+      SIMPLEFOC_DEBUG("ERR: MOT: Motor characterisation failed: measured current too low");
+      return 3;
+    }
+    
+
     float resistance = voltage / (correction_factor * (r_currents.d - zerocurrent.d));
     SIMPLEFOC_DEBUG("MOT: Estimated phase to phase resistance: ", 2.0f * resistance);
     _delay(100);
@@ -154,7 +161,7 @@ int FOCMotor::characteriseMotor(float voltage){
         {
           // current_electric_angle = electricalAngle();
           // read zero current
-          zerocurrent_raw = current_sense->readAverageCurrents(10);
+          zerocurrent_raw = current_sense->readAverageCurrents(20);
           zerocurrent = current_sense->getDQCurrents(current_sense->getABCurrents(zerocurrent_raw), current_electric_angle);
           
           // step the voltage
@@ -173,8 +180,15 @@ int FOCMotor::characteriseMotor(float voltage){
           if (t0 > t1a || t0 > t1b) continue; // safety first
 
           // calculate the inductance
-          float dt = 0.5f*(t1a + t1b - 2*t0)/1000000.0f;
-          inductanced += fabs(- (resistance * dt) / log((voltage - resistance * fabs(l_currents.d - zerocurrent.d)) / voltage))/correction_factor;
+          float dt = 0.5f*(t1b + t1b - 2*t0)/1000000.0f;
+
+          if (l_currents.d - zerocurrent.d <= 0)
+          {
+            // j--;
+            continue;
+          }
+          
+          inductanced += fabsf(- (resistance * dt) / log((voltage - resistance * (l_currents.d - zerocurrent.d)) / voltage))/correction_factor;
           qcurrent+= l_currents.q - zerocurrent.q;
           dcurrent+= l_currents.d - zerocurrent.d;
         }
@@ -185,16 +199,23 @@ int FOCMotor::characteriseMotor(float voltage){
 
         inductanced /= cycles;
         float lastD = Ltemp;
-        Ltemp = i == 0 ? inductanced : Ltemp * 0.8 + inductanced * 0.2;
+        Ltemp = i < 2 ? inductanced : Ltemp * 0.6 + inductanced * 0.4;
         
         // SIMPLEFOC_DEBUG("MOT: Estimated D-inductance in mH: ", L * 1000.0f);
-        
-        float timeconstant = fabs(Ltemp / resistance); // Timeconstant of an RL circuit (L/R) 
-        risetime_us = _constrain(1000000 * timeconstant, 100, 10000); // Wait as long as possible (due to limited timing accuracy & sample rate), but as short as needed (while the current still changes)
+        // if (dcurrent >= 0.8f * voltage / (resistance * correction_factor))
+        // {
+        //   risetime_us = _constrain(uint(0.8f * risetime_us), 100, 10000);
+        // } else
+        {
+          float timeconstant = fabsf(Ltemp / resistance); // Timeconstant of an RL circuit (L/R) 
+          // SIMPLEFOC_DEBUG("MOT: Estimated time constant in us: ", 1000000.0f * timeconstant);
+          risetime_us = _constrain(risetime_us * 0.6f + 0.4f * 1000000 * 0.6f * timeconstant, 100, 10000); // Wait as long as possible (due to limited timing accuracy & sample rate), but as short as needed (while the current still changes)
+        }
         settle_us = 10 * risetime_us;
-        SIMPLEFOC_DEBUG("MOT: Estimated time constant in us: ", timeconstant * 1000000.0f);
+        
+        
 
-        Serial.printf(">inductance:%f:%f|xy\n", current_electric_angle, Ltemp * 1000.0f);
+        // Serial.printf(">inductance:%f:%f|xy\n", current_electric_angle, Ltemp * 1000.0f);
 
         if (axis)
         {
@@ -233,6 +254,14 @@ int FOCMotor::characteriseMotor(float voltage){
     SIMPLEFOC_DEBUG("MOT: Inductance measurement complete!");
     SIMPLEFOC_DEBUG("MOT: Measured D-inductance in mH: ", Ld * 1000.0f);
     SIMPLEFOC_DEBUG("MOT: Measured Q-inductance in mH: ", Lq * 1000.0f);
+    if (Ld > Lq)
+    {
+      SIMPLEFOC_DEBUG("WARN: MOT: Measured inductance is larger in D than in Q axis. This is normally a sign of a measurement error.");
+    }
+    if (Ld * 2.0f < Lq)
+    {
+      SIMPLEFOC_DEBUG("WARN: MOT: Measured Q inductance is more than twice the D inductance. This is probably wrong. From experience, the lower value is probably close to reality.");
+    }    
 
     return 0;
     
