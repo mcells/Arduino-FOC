@@ -36,6 +36,8 @@ class HFIBLDCMotor: public FOCMotor
     float sensorless_out;
     float hfi_angle;
     float hfi_full_turns=0;
+
+    boolean currentLoopAlwaysInInterrupt = true;
     
     unsigned long lastUpdateTime = _micros();
 
@@ -50,7 +52,7 @@ class HFIBLDCMotor: public FOCMotor
 
     float Ts = 1.0f/60000.0f;
     float Ts_L = Ts * ( 1 / Lq - 1 / Ld );
-    float current_bandwidth = 300;
+    float current_bandwidth = 3000;
     float polarity_max_pos=0;
     float polarity_max_neg=0;
     float polarity_detection=0;
@@ -62,6 +64,7 @@ class HFIBLDCMotor: public FOCMotor
     DQCurrent_s current_low;
     DQCurrent_s delta_current;
     DQCurrent_s current_setpoint;
+    float feedforward_current;
 
     float bemf=0;
     float flux_observer_angle=0;

@@ -150,8 +150,10 @@ int  HFIBLDCMotor::initFOC() {
   motor_status = FOCMotorStatus::motor_calibrating;
   polarity_cycles=(int)(3.5*(Ld/phase_resistance)/Ts);
   flux_linkage = 60.0 / ( _sqrt(3) * _PI * (KV_rating) * (pole_pairs * 2));
-  PID_current_d.output_ramp = (20000.0f*0.02f*Ld)/Ts; // A per cycle V=(A*H)/s
-  PID_current_q.output_ramp = (20000.0f*0.05f*Lq)/Ts; // A per cycle
+  // PID_current_d.output_ramp = ((float)driver->pwm_frequency*0.002f*Ld)/Ts; // A per cycle V=(A*H)/s
+  // PID_current_q.output_ramp = ((float)driver->pwm_frequency*0.005f*Lq)/Ts; // A per cycle
+    PID_current_d.output_ramp = 0; // A per cycle V=(A*H)/s
+  PID_current_q.output_ramp = 0; // A per cycle
   // align motor if necessary
   // alignment necessary for encoders!
   // sensor and motor alignment - can be skipped
@@ -328,7 +330,6 @@ int HFIBLDCMotor::absoluteZeroSearch() {
 void IRAM_ATTR HFIBLDCMotor::process_hfi(){
   // digitalToggle(PC10);
   // digitalToggle(PC10);
-
   // if hfi off, handle in normal way
   if (hfi_on == false || enabled==0) {
     hfi_firstcycle=true;
@@ -337,6 +338,98 @@ void IRAM_ATTR HFIBLDCMotor::process_hfi(){
     sensorless_out=0;
     hfi_angle=0;
     hfi_full_turns=0;
+
+    if(currentLoopAlwaysInInterrupt && enabled != 0 && motor_status == FOCMotorStatus::motor_ready)
+    {
+      #ifndef HFI_2XPWM
+      bool is_v0 = driver->getPwmState();
+
+      if (!is_v0) {
+        driver->setPwm(Ua, Ub, Uc);
+        // digitalToggle(PC10);
+        // digitalToggle(PC10);
+        return;
+      }
+      #endif
+
+      if (last_hfi_v != hfi_v || last_Ts != Ts || last_Ld != Ld || last_Lq != Lq || last_pp != pole_pairs)
+      {
+        predivAngleest = 1.0f / (hfi_v * Ts * ( 1.0f / Lq - 1.0f / Ld ) );
+        last_hfi_v = hfi_v;
+        last_Ts = Ts;
+        last_Ld = Ld;
+        last_Lq = Lq;
+        last_pp = pole_pairs;
+        Ts_div = 1.0f / Ts;
+        Ts_pp_div = 1.0f / (Ts * pole_pairs);
+      }
+
+      float center;
+      DQVoltage_s voltage_pid;
+      DQCurrent_s current_err;
+      float _ca,_sa;
+      float hfi_v_act;
+      _sincos(electrical_angle, &_sa, &_ca);
+      // _sincos(1.5f, &_sa, &_ca);
+
+      PhaseCurrent_s phase_current = current_sense->getPhaseCurrents();
+      ABCurrent_s ABcurrent = current_sense->getABCurrents(phase_current);
+      current_meas.d = ABcurrent.alpha * _ca + ABcurrent.beta * _sa;
+      current_meas.q = ABcurrent.beta * _ca - ABcurrent.alpha * _sa;
+
+      if(current_meas.d+current_meas.q>ocp_protection_limit){
+        ocp_cycles_counter+=1;
+      }
+
+      else{
+        ocp_cycles_counter=0;
+      }
+      if(ocp_cycles_counter>=ocp_protection_maxcycles){
+        enabled=0;
+        driver->setPwm(0,0,0);
+        driver->disable();
+        return;
+      }
+
+      if( controller==MotionControlType::angle_openloop || controller==MotionControlType::velocity_openloop || torque_controller == TorqueControlType::voltage){return;}
+
+      current_err.q = LPF_current_q(current_setpoint.q) - current_meas.q;
+      current_err.d = LPF_current_d(current_setpoint.d) - current_meas.d;
+
+      
+      voltage_pid.q = PID_current_q(current_err.q, Ts, Ts_div);
+      voltage_pid.d = PID_current_d(current_err.d, Ts, Ts_div);
+      
+
+      // lowpass does a += on the first arg
+      LOWPASS(voltage.q, voltage_pid.q, 0.34f);
+      LOWPASS(voltage.d, voltage_pid.d, 0.34f);
+    
+      voltage.d = _constrain(voltage.d ,-voltage_limit, voltage_limit);
+      voltage.q = _constrain(voltage.q ,-voltage_limit, voltage_limit);
+
+      Ualpha =  _ca * voltage.d - _sa * voltage.q;  // -sin(angle) * Uq;
+      Ubeta =  _sa * voltage.d + _ca * voltage.q;    //  cos(angle) * Uq;
+
+      // Clarke transform
+      Ua = Ualpha;
+      Ub = -0.5f * Ualpha + _SQRT3_2 * Ubeta;
+      Uc = -0.5f * Ualpha - _SQRT3_2 * Ubeta;
+
+      center = driver->voltage_limit/2.0f;
+      float Umin = min(Ua, min(Ub, Uc));
+      float Umax = max(Ua, max(Ub, Uc));
+      center -= (Umax+Umin) / 2.0f;
+      
+      Ua += center;
+      Ub += center;
+      Uc += center;
+      // Serial.printf(">hfiV:%f\n", Ua);
+      #ifdef HFI_2XPWM
+        // for hfi at 2x pwm
+        driver->setPwm(Ua, Ub, Uc);
+      #endif
+    }
     return;
   }
 
@@ -528,7 +621,7 @@ void IRAM_ATTR HFIBLDCMotor::process_hfi(){
       hfi_angle_prev = hfi_angle;
     }
 
-    current_err.q = polarity_correction * current_setpoint.q - current_meas.q;
+    current_err.q = polarity_correction * (current_setpoint.q) - current_meas.q;
     current_err.d = polarity_correction * current_setpoint.d - current_meas.d;
 
     
@@ -618,7 +711,19 @@ void HFIBLDCMotor::loopFOC() {
   // if hfi is on, we'll handle everything elsewhere
   if (hfi_on == true) {
     return;
+  } else if(hfi_on == false && currentLoopAlwaysInInterrupt == true && torque_controller == TorqueControlType::foc_current && current_sense)
+  {
+    if (sensor) sensor->update();
+    // if open-loop do nothing
+    if( controller==MotionControlType::angle_openloop || controller==MotionControlType::velocity_openloop ) return;
+    
+    // if disabled do nothing
+    if(!enabled) return;
+
+    electrical_angle = electricalAngle();
+    return;
   }
+  
   // update sensor - do this even in open-loop mode, as user may be switching between modes and we could lose track
   //                 of full rotations otherwise.
   if (sensor) sensor->update();
@@ -689,7 +794,7 @@ void HFIBLDCMotor::move(float new_target) {
   //                        For this reason it is NOT precise when the angles become large.
   //                        Additionally, the way LPF works on angle is a precision issue, and the angle-LPF is a problem
   //                        when switching to a 2-component representation.
-  if( controller!=MotionControlType::angle_openloop && controller!=MotionControlType::velocity_openloop ) ;
+  
   if (hfi_on==true) {
     noInterrupts();
     float tmp_electrical_angle = electrical_angle;
@@ -706,11 +811,12 @@ void HFIBLDCMotor::move(float new_target) {
     //hfi_velocity = tmp_hfi_int /(Ts*pole_pairs);
 
   } else {
-    if (!sensor){
-      shaft_angle = shaftAngle(); // read value even if motor is disabled to keep the monitoring updated but not in openloop mode
+    // if (!sensor){
+      if( controller!=MotionControlType::angle_openloop && controller!=MotionControlType::velocity_openloop ) {shaft_angle = shaftAngle(); // read value even if motor is disabled to keep the monitoring updated but not in openloop mode
       // get angular velocity  TODO the velocity reading probably also shouldn't happen in open loop modes?
       shaft_velocity = shaftVelocity(); // read value even if motor is disabled to keep the monitoring updated
-    }
+    // }
+      }
   }
   // if disabled do nothing
   if(!enabled) return;
@@ -723,20 +829,20 @@ void HFIBLDCMotor::move(float new_target) {
   if(!current_sense && _isset(phase_resistance)) current.q = (voltage.q - voltage_bemf)/phase_resistance;
   
   float temp_q_setpoint;
-  float tmp_sensorless_velocity;
+  float tmp_velocity = shaft_velocity;
   // upgrade the current based voltage limit
   switch (controller) {
     case MotionControlType::torque:
       if(torque_controller == TorqueControlType::voltage){ // if voltage torque control
-        if(!_isset(phase_resistance))  voltage.q = target;
-        else  voltage.q =  target*phase_resistance + voltage_bemf;
+        if(!_isset(phase_resistance))  voltage.q = target + feedforward_current;
+        else  voltage.q =  (target + feedforward_current)*phase_resistance + voltage_bemf;
         voltage.q = _constrain(voltage.q, -voltage_limit, voltage_limit);
         // set d-component (lag compensation if known inductance)
         if(!_isset(phase_inductance)) voltage.d = 0;
         else voltage.d = _constrain( -target*shaft_velocity*pole_pairs*phase_inductance, -voltage_limit, voltage_limit);
       }else{
         noInterrupts();
-        current_setpoint.q = target; // if current/foc_current torque control
+        current_setpoint.q = target + feedforward_current; // if current/foc_current torque control
         interrupts();
       }
       break;
@@ -746,13 +852,21 @@ void HFIBLDCMotor::move(float new_target) {
       //                        to solve this, the delta-angle has to be calculated in a numerically precise way.
       // angle set point
       shaft_angle_sp = target;
-      // calculate velocity set point
-      temp_q_setpoint = feed_forward_velocity + P_angle( shaft_angle_sp - shaft_angle );
-      temp_q_setpoint = _constrain(temp_q_setpoint,-current_limit, current_limit);
-      temp_q_setpoint = LPF_angle(temp_q_setpoint);
+      // // calculate velocity set point
+      // temp_q_setpoint = feed_forward_velocity + P_angle( shaft_angle_sp - shaft_angle );
+      // temp_q_setpoint = _constrain(temp_q_setpoint,-current_limit, current_limit);
+      // temp_q_setpoint = LPF_angle(temp_q_setpoint);
+
+       // calculate velocity set point
+      shaft_velocity_sp = feed_forward_velocity + P_angle( shaft_angle_sp - shaft_angle );
+      shaft_velocity_sp = _constrain(shaft_velocity_sp,-velocity_limit, velocity_limit);
+      // calculate the torque command - sensor precision: this calculation is ok, but based on bad value from previous calculation
+      temp_q_setpoint = PID_velocity(shaft_velocity_sp - shaft_velocity); // if voltage torque control
+
+      // if torque controlled through voltage
       // calculate the torque command - sensor precision: this calculation is ok, but based on bad value from previous calculation
       noInterrupts();
-      current_setpoint.q = temp_q_setpoint;
+      current_setpoint.q = temp_q_setpoint + feedforward_current;
       interrupts();
       // if torque controlled through voltage
       if(torque_controller == TorqueControlType::voltage){
@@ -769,13 +883,16 @@ void HFIBLDCMotor::move(float new_target) {
       shaft_velocity_sp = target;
       // calculate the torque command
       noInterrupts();
-      tmp_sensorless_velocity=sensorless_velocity;
+      if (hfi_on == true)
+      {
+        tmp_velocity=sensorless_velocity;
+      }
       interrupts();
-      temp_q_setpoint = PID_velocity(shaft_velocity_sp - tmp_sensorless_velocity); // if current/foc_current torque control
+      temp_q_setpoint = PID_velocity(shaft_velocity_sp - shaft_velocity); // if current/foc_current torque control
       temp_q_setpoint = _constrain(temp_q_setpoint,-current_limit, current_limit);
       temp_q_setpoint = LPF_velocity(temp_q_setpoint);
       noInterrupts();
-      current_setpoint.q = temp_q_setpoint;
+      current_setpoint.q = temp_q_setpoint + feedforward_current;
       interrupts();
       // if torque controlled through voltage control
       if(torque_controller == TorqueControlType::voltage){
