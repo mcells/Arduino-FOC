@@ -83,6 +83,10 @@ class StepperMotor: public FOCMotor
     */
     void setPhaseVoltage(float Uq, float Ud, float angle_el) override;
 
+    int characteriseMotor(float voltage){
+      return FOCMotor::characteriseMotor(voltage, 1.0f);
+    }
+
   private:
   
     /** Sensor alignment to electrical 0 angle of the motor */

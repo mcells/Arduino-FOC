@@ -149,7 +149,7 @@ class FOCMotor
      */
     float electricalAngle();
 
-    int characteriseMotor(float voltage);
+    int characteriseMotor(float voltage, float correction_factor);
 
     // state variables
     float target; //!< current target value - depends of the controller

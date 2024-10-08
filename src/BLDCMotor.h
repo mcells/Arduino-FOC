@@ -81,6 +81,10 @@ class BLDCMotor: public FOCMotor
     */
     void setPhaseVoltage(float Uq, float Ud, float angle_el) override;
 
+    int characteriseMotor(float voltage){
+      return FOCMotor::characteriseMotor(voltage, 1.5f);
+    }
+
   private:
     // FOC methods 
 

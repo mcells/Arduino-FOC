@@ -81,7 +81,8 @@ float FOCMotor::electricalAngle(){
 }
 
 // Measure resistance and inductance of a motor
-int FOCMotor::characteriseMotor(float voltage){
+// @param correction_factor  Is 1.5 for 3 phase motors, because we measure over a series-parallel connection. TODO: what about 2 phase motors?
+int FOCMotor::characteriseMotor(float voltage, float correction_factor=1.0f){
     if (!this->current_sense || !this->current_sense->initialized)
     {
       SIMPLEFOC_DEBUG("ERR: MOT: Cannot characterise motor: CS unconfigured or not initialized");
@@ -95,8 +96,6 @@ int FOCMotor::characteriseMotor(float voltage){
     voltage = _constrain(voltage, 0.0f, voltage_limit);
     
     float current_electric_angle = electricalAngle();
-
-    float correction_factor = 1.5f; // 1.5 for 3 phase motors, because we measure over a series-parallel connection. TODO: what about 2 phase motors?
     
     SIMPLEFOC_DEBUG("MOT: Measuring phase to phase resistance, keep motor still...");
 
