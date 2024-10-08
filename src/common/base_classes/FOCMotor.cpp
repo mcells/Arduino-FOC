@@ -118,7 +118,7 @@ int FOCMotor::characteriseMotor(float voltage){
     _delay(10);
     PhaseCurrent_s r_currents_raw = current_sense->readAverageCurrents();
     DQCurrent_s r_currents = current_sense->getDQCurrents(current_sense->getABCurrents(r_currents_raw), current_electric_angle);
-    
+
     setPhaseVoltage(0, 0, current_electric_angle);
     
     if (fabsf(r_currents.d - zerocurrent.d) < 0.2f)
@@ -141,6 +141,7 @@ int FOCMotor::characteriseMotor(float voltage){
     float Ltemp = 0;
     float Ld = 0;
     float Lq = 0;
+    float d_electrical_angle = 0;
 
     uint iterations = 40;
     uint cycles = 3;
@@ -231,6 +232,12 @@ int FOCMotor::characteriseMotor(float voltage){
         }
         current_electric_angle = fmodf(current_electric_angle, _2PI);
         if(current_electric_angle < 0.0f) current_electric_angle += _2PI;
+
+        if (axis)
+        {
+          d_electrical_angle = i < 2 ? current_electric_angle : d_electrical_angle * 0.9 + current_electric_angle * 0.1;
+        }
+        
        
       }
 
@@ -248,7 +255,26 @@ int FOCMotor::characteriseMotor(float voltage){
       }
       
     }
-    
+
+    if (sensor)
+    {
+      // The d_electrical_angle should now be aligned to the d axis or the -d axis. We can therefore calculate two possible electrical zero angles. 
+      // We then report the one closest to the actual value. This could be useful if the zero search method is not reliable enough (eg. high pole count).
+
+      float estimated_zero_electric_angle_A = _normalizeAngle(  (float)(sensor_direction * pole_pairs) * sensor->getMechanicalAngle() - d_electrical_angle);
+      float estimated_zero_electric_angle_B = _normalizeAngle(  (float)(sensor_direction * pole_pairs) * sensor->getMechanicalAngle() - d_electrical_angle + _PI);
+      float estimated_zero_electric_angle = 0.0f;
+      if (fabsf(estimated_zero_electric_angle_A - zero_electric_angle) < fabsf(estimated_zero_electric_angle_B - zero_electric_angle))
+      {
+        estimated_zero_electric_angle = estimated_zero_electric_angle_A;
+      } else
+      {
+        estimated_zero_electric_angle = estimated_zero_electric_angle_B;
+      }
+
+      SIMPLEFOC_DEBUG("MOT: Newly estimated electrical zero: ", estimated_zero_electric_angle);
+      SIMPLEFOC_DEBUG("MOT: Current electrical zero: ", zero_electric_angle);
+    }
     
 
     SIMPLEFOC_DEBUG("MOT: Inductance measurement complete!");
