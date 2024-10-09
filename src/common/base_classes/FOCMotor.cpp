@@ -128,6 +128,12 @@ int FOCMotor::characteriseMotor(float voltage, float correction_factor=1.0f){
     }
     
     float resistance = voltage / (correction_factor * (r_currents.d - zerocurrent.d));
+    if (resistance <= 0.0f)
+    {
+      SIMPLEFOC_DEBUG("ERR: MOT: Motor characterisation failed: Calculated resistance <= 0");
+      return 4;
+    }
+
     SIMPLEFOC_DEBUG("MOT: Estimated phase to phase resistance: ", 2.0f * resistance);
     _delay(100);
 
@@ -182,7 +188,7 @@ int FOCMotor::characteriseMotor(float voltage, float correction_factor=1.0f){
 
           // calculate the inductance
           float dt = (t1 - t0)/1000000.0f;
-          if (l_currents.d - zerocurrent.d <= 0)
+          if (l_currents.d - zerocurrent.d <= 0 || (voltage - resistance * (l_currents.d - zerocurrent.d)) <= 0)
           {
             continue;
           }
