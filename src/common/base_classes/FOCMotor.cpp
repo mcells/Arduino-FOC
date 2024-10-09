@@ -81,7 +81,6 @@ float FOCMotor::electricalAngle(){
 }
 
 // Measure resistance and inductance of a motor
-// @param correction_factor  Is 1.5 for 3 phase motors, because we measure over a series-parallel connection. TODO: what about 2 phase motors?
 int FOCMotor::characteriseMotor(float voltage, float correction_factor=1.0f){
     if (!this->current_sense || !this->current_sense->initialized)
     {
@@ -95,11 +94,11 @@ int FOCMotor::characteriseMotor(float voltage, float correction_factor=1.0f){
     }
     voltage = _constrain(voltage, 0.0f, voltage_limit);
     
-    float current_electric_angle = electricalAngle();
-    
     SIMPLEFOC_DEBUG("MOT: Measuring phase to phase resistance, keep motor still...");
 
-    // Apply zero volts
+    float current_electric_angle = electricalAngle();
+
+    // Apply zero volts and measure a zero reference
     setPhaseVoltage(0, 0, current_electric_angle);
     _delay(500);
     
@@ -118,48 +117,51 @@ int FOCMotor::characteriseMotor(float voltage, float correction_factor=1.0f){
     PhaseCurrent_s r_currents_raw = current_sense->readAverageCurrents();
     DQCurrent_s r_currents = current_sense->getDQCurrents(current_sense->getABCurrents(r_currents_raw), current_electric_angle);
 
+    // Zero again
     setPhaseVoltage(0, 0, current_electric_angle);
     
+
     if (fabsf(r_currents.d - zerocurrent.d) < 0.2f)
     {
       SIMPLEFOC_DEBUG("ERR: MOT: Motor characterisation failed: measured current too low");
       return 3;
     }
     
-
     float resistance = voltage / (correction_factor * (r_currents.d - zerocurrent.d));
     SIMPLEFOC_DEBUG("MOT: Estimated phase to phase resistance: ", 2.0f * resistance);
     _delay(100);
 
-    //start inductance measurement
+
+    // Start inductance measurement
     SIMPLEFOC_DEBUG("MOT: Measuring inductance, keep motor still...");
 
     unsigned long t0 = 0;
-    unsigned long t1a = 0;
-    unsigned long t1b = 0;
+    unsigned long t1 = 0;
     float Ltemp = 0;
     float Ld = 0;
     float Lq = 0;
     float d_electrical_angle = 0;
 
-    uint iterations = 40;
-    uint cycles = 3;
-    uint risetime_us = 200; // short for worst case scenario with low inductance
-    uint settle_us = 100000; // long for worst case scenario with high inductance
+    uint iterations = 40;    // how often the algorithm gets repeated.
+    uint cycles = 3;         // averaged measurements for each iteration
+    uint risetime_us = 200;  // initially short for worst case scenario with low inductance
+    uint settle_us = 100000; // initially long for worst case scenario with high inductance
+
+    // Pre-rotate the angle to the q-axis (only useful with sensor, else no harm in doing it)
+    current_electric_angle += 0.5f * _PI;
+    current_electric_angle = _normalizeAngle(current_electric_angle);
 
     for (size_t axis = 0; axis < 2; axis++)
     {
       for (size_t i = 0; i < iterations; i++)
       {
-        // current_electric_angle = i * _2PI / iterations;
-        float inductanceq = 0.0f;
+        // current_electric_angle = i * _2PI / iterations; // <-- Do a sweep of the inductance. Use eg. for graphing
         float inductanced = 0.0f;
         
         float qcurrent = 0.0f;
         float dcurrent = 0.0f;
         for (size_t j = 0; j < cycles; j++)
         {
-          // current_electric_angle = electricalAngle();
           // read zero current
           zerocurrent_raw = current_sense->readAverageCurrents(20);
           zerocurrent = current_sense->getDQCurrents(current_sense->getABCurrents(zerocurrent_raw), current_electric_angle);
@@ -167,59 +169,58 @@ int FOCMotor::characteriseMotor(float voltage, float correction_factor=1.0f){
           // step the voltage
           setPhaseVoltage(0, voltage, current_electric_angle);
           t0 = micros();
-          delayMicroseconds(risetime_us);
+          delayMicroseconds(risetime_us); // wait a little bit
 
-          t1a = micros();
           PhaseCurrent_s l_currents_raw = current_sense->getPhaseCurrents();
-          t1b = micros();
+          t1 = micros();
           setPhaseVoltage(0, 0, current_electric_angle);
 
           DQCurrent_s l_currents = current_sense->getDQCurrents(current_sense->getABCurrents(l_currents_raw), current_electric_angle);
           delayMicroseconds(settle_us); // wait a bit for the currents to go to 0 again
 
-          if (t0 > t1a || t0 > t1b) continue; // safety first
+          if (t0 > t1) continue; // safety first
 
           // calculate the inductance
-          float dt = 0.5f*(t1b + t1b - 2*t0)/1000000.0f;
-
+          float dt = (t1 - t0)/1000000.0f;
           if (l_currents.d - zerocurrent.d <= 0)
           {
-            // j--;
             continue;
           }
           
           inductanced += fabsf(- (resistance * dt) / log((voltage - resistance * (l_currents.d - zerocurrent.d)) / voltage))/correction_factor;
-          qcurrent+= l_currents.q - zerocurrent.q;
+          
+          qcurrent+= l_currents.q - zerocurrent.q; // average the measured currents
           dcurrent+= l_currents.d - zerocurrent.d;
         }
         qcurrent /= cycles;
         dcurrent /= cycles;
-        float delta = qcurrent / (fabsf(dcurrent) + fabsf(qcurrent));
+
+        float delta = qcurrent / (fabsf(dcurrent) + fabsf(qcurrent)); 
 
 
         inductanced /= cycles;
-        float lastD = Ltemp;
         Ltemp = i < 2 ? inductanced : Ltemp * 0.6 + inductanced * 0.4;
         
-        // SIMPLEFOC_DEBUG("MOT: Estimated D-inductance in mH: ", L * 1000.0f);
-        // if (dcurrent >= 0.8f * voltage / (resistance * correction_factor))
-        // {
-        //   risetime_us = _constrain(uint(0.8f * risetime_us), 100, 10000);
-        // } else
-        {
-          float timeconstant = fabsf(Ltemp / resistance); // Timeconstant of an RL circuit (L/R) 
-          // SIMPLEFOC_DEBUG("MOT: Estimated time constant in us: ", 1000000.0f * timeconstant);
-          risetime_us = _constrain(risetime_us * 0.6f + 0.4f * 1000000 * 0.6f * timeconstant, 100, 10000); // Wait as long as possible (due to limited timing accuracy & sample rate), but as short as needed (while the current still changes)
-        }
+        float timeconstant = fabsf(Ltemp / resistance); // Timeconstant of an RL circuit (L/R) 
+        // SIMPLEFOC_DEBUG("MOT: Estimated time constant in us: ", 1000000.0f * timeconstant);
+
+        // Wait as long as possible (due to limited timing accuracy & sample rate), but as short as needed (while the current still changes)
+        risetime_us = _constrain(risetime_us * 0.6f + 0.4f * 1000000 * 0.6f * timeconstant, 100, 10000);
         settle_us = 10 * risetime_us;
         
-        
 
-        // Serial.printf(">inductance:%f:%f|xy\n", current_electric_angle, Ltemp * 1000.0f);
+        // Serial.printf(">inductance:%f:%f|xy\n", current_electric_angle, Ltemp * 1000.0f); // <-- Plot an angle sweep
 
+
+        /**
+         * How this code works:
+         * If we apply a current spike in the d´-axis, there will be cross coupling to the q´-axis current, if we didn´t use the actual d-axis (ie. d´ != d).
+         * This has to do with saliency (Ld != Lq). 
+         * The amount of cross coupled current is somewhat proportional to the angle error, which means that if we iteratively change the angle to min/maximise this current, we get the correct d-axis (and q-axis).
+        */
         if (axis)
         {
-          qcurrent *= -1.0f;
+          qcurrent *= -1.0f; // to d or q axis
         }
         
         if (qcurrent < 0)
@@ -229,25 +230,25 @@ int FOCMotor::characteriseMotor(float voltage, float correction_factor=1.0f){
         {
           current_electric_angle-=fabsf(delta);
         }
-        current_electric_angle = fmodf(current_electric_angle, _2PI);
-        if(current_electric_angle < 0.0f) current_electric_angle += _2PI;
+        current_electric_angle = _normalizeAngle(current_electric_angle);
 
+
+        // Average the d-axis angle further for calculating the electrical zero later
         if (axis)
         {
           d_electrical_angle = i < 2 ? current_electric_angle : d_electrical_angle * 0.9 + current_electric_angle * 0.1;
         }
         
-       
       }
 
+      // We know the minimum is 0.5*PI radians away, so less iterations are needed.
       current_electric_angle += 0.5f * _PI;
-      current_electric_angle = fmodf(current_electric_angle, _2PI);
-      if(current_electric_angle < 0.0f) current_electric_angle += _2PI;
+      current_electric_angle = _normalizeAngle(current_electric_angle);
       iterations /= 2;
 
       if (axis == 0)
       {
-          Lq = Ltemp;
+        Lq = Ltemp;
       }else
       {
         Ld = Ltemp;
@@ -257,8 +258,10 @@ int FOCMotor::characteriseMotor(float voltage, float correction_factor=1.0f){
 
     if (sensor)
     {
-      // The d_electrical_angle should now be aligned to the d axis or the -d axis. We can therefore calculate two possible electrical zero angles. 
-      // We then report the one closest to the actual value. This could be useful if the zero search method is not reliable enough (eg. high pole count).
+      /**
+       * The d_electrical_angle should now be aligned to the d axis or the -d axis. We can therefore calculate two possible electrical zero angles. 
+       * We then report the one closest to the actual value. This could be useful if the zero search method is not reliable enough (eg. high pole count).
+      */
 
       float estimated_zero_electric_angle_A = _normalizeAngle(  (float)(sensor_direction * pole_pairs) * sensor->getMechanicalAngle() - d_electrical_angle);
       float estimated_zero_electric_angle_B = _normalizeAngle(  (float)(sensor_direction * pole_pairs) * sensor->getMechanicalAngle() - d_electrical_angle + _PI);
